@@ -19,6 +19,8 @@ func help() {
 	log.Debug(playing.OperateEnterRoom, int(playing.OperateEnterRoom))
 	log.Debug(playing.OperateReadyRoom, int(playing.OperateReadyRoom))
 	log.Debug(playing.OperateLeaveRoom, int(playing.OperateLeaveRoom))
+	log.Debug(playing.OperateBet, int(playing.OperateBet), "1(score)")
+	log.Debug(playing.OperateShowCards, int(playing.OperateShowCards))
 	log.Debug("-----------------help---------------------")
 }
 
@@ -34,7 +36,7 @@ func main() {
 
 	//init room
 	conf := playing.NewRoomConfig()
-	conf.Init(3)
+	conf.Init(1, 2)
 	room := playing.NewRoom(util.UniqueId(), conf)
 	room.Start()
 
@@ -57,7 +59,7 @@ func main() {
 		robots[0].OperateDoReady()
 		time.Sleep(time.Second * 2)
 		robots[1].OperateDoReady()
-		time.Sleep(time.Second * 8)
+		time.Sleep(time.Second * 5)
 		robots[2].OperateDoReady()
 		//curPlayer.OperateDoReady()
 	}()
@@ -82,6 +84,11 @@ func main() {
 			curPlayer.OperateDoReady()
 		case playing.OperateLeaveRoom:
 			curPlayer.OperateLeaveRoom()
+		case playing.OperateBet:
+			score, _ := strconv.Atoi(splits[1])
+			curPlayer.OperateBet(int32(score))
+		case playing.OperateShowCards:
+			curPlayer.OperateShowCards()
 		}
 	}
 }

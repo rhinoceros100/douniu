@@ -12,7 +12,7 @@ type RoomStatusType int
 const (
 	RoomStatusWaitAllPlayerEnter	RoomStatusType = iota	// 等待玩家进入房间
 	RoomStatusWaitAllPlayerReady				// 等待玩家准备
-	RoomStatusConfirmMaster					// 确定庄家
+	RoomStatusGetMaster					// 确定庄家
 	RoomStatusPlayGame					// 正在进行游戏，结束后会进入RoomStatusShowCards
 	RoomStatusShowCards					// 亮牌
 	RoomStatusEndPlayGame					// 游戏结束后会回到等待游戏开始状态，或者进入结束房间状态
@@ -25,8 +25,8 @@ func (status RoomStatusType) String() string {
 		return "RoomStatusWaitAllPlayerEnter"
 	case RoomStatusWaitAllPlayerReady:
 		return "RoomStatusWaitAllPlayerReady"
-	case RoomStatusConfirmMaster:
-		return "RoomStatusConfirmMaster"
+	case RoomStatusGetMaster:
+		return "RoomStatusGetMaster"
 	case RoomStatusPlayGame:
 		return "RoomStatusPlayGame"
 	case RoomStatusShowCards:
@@ -60,7 +60,9 @@ type Room struct {
 	//end playingGameData, reset when start playing game
 
 	roomOperateCh		chan *Operate
-	xiazhuCh		[]chan *Operate				//解散房间
+	BetCh		[]chan *Operate				//下注
+	ShowCardsCh	[]chan *Operate				//亮牌
+	ReadyCh		[]chan *Operate				//准备
 
 	stop bool
 }
@@ -76,10 +78,14 @@ func NewRoom(id uint64, config *RoomConfig) *Room {
 		playedGameCnt:	0,
 
 		roomOperateCh: make(chan *Operate, 1024),
-		xiazhuCh: make([]chan *Operate, config.MaxPlayerNum),
+		BetCh: make([]chan *Operate, config.MaxPlayerNum),
+		ShowCardsCh: make([]chan *Operate, config.MaxPlayerNum),
+		ReadyCh: make([]chan *Operate, config.MaxPlayerNum),
 	}
 	for idx := 0; idx < config.MaxPlayerNum; idx ++ {
-		room.xiazhuCh[idx] = make(chan *Operate, 1)
+		room.BetCh[idx] = make(chan *Operate, 1)
+		room.ShowCardsCh[idx] = make(chan *Operate, 1)
+		room.ReadyCh[idx] = make(chan *Operate, 1)
 	}
 	return room
 }
@@ -89,10 +95,16 @@ func (room *Room) GetId() uint64 {
 }
 
 func (room *Room) PlayerOperate(op *Operate) {
-	//idx := op.Operator.position
+	pos := op.Operator.position
+	log.Debug(time.Now().Unix(), room, op.Operator, "PlayerOperate", op.Op, " pos:", pos)
+
 	switch op.Op {
 	case OperateEnterRoom, OperateLeaveRoom, OperateReadyRoom:
 		room.roomOperateCh <- op
+	case OperateBet:
+		room.BetCh[pos] <- op
+	case OperateShowCards:
+		room.ShowCardsCh[pos] <- op
 	}
 }
 
@@ -110,6 +122,7 @@ func (room *Room) Start() {
 				break
 			}
 		}
+		log.Debug("over^^")
 	}()
 }
 
@@ -119,16 +132,16 @@ func (room *Room) checkStatus() {
 		room.waitAllPlayerEnter()
 	case RoomStatusWaitAllPlayerReady:
 		room.waitAllPlayerReady()
-	case RoomStatusConfirmMaster:
-		room.confirmMaster()
+	case RoomStatusGetMaster:
+		room.getMaster()
 	case RoomStatusPlayGame:
 		room.playGame()
 	case RoomStatusShowCards:
 		room.showCards()
-	/*case RoomStatusEndPlayGame:
+	case RoomStatusEndPlayGame:
 		room.endPlayGame()
 	case RoomStatusRoomEnd:
-		room.close()*/
+		room.close()
 	}
 }
 
@@ -143,9 +156,9 @@ func (room *Room) close() {
 		observer.OnRoomClosed(room)
 	}
 
-	/*for _, player := range room.players {
+	for _, player := range room.players {
 		player.OnRoomClosed()
-	}*/
+	}
 }
 
 func (room *Room) isEnterPlayerEnough() bool {
@@ -157,12 +170,13 @@ func (room *Room) isEnterPlayerEnough() bool {
 func (room *Room) switchStatus(status RoomStatusType) {
 	log.Debug(time.Now().Unix(), room, "room status switch,", room.roomStatus, " =>", status)
 	room.roomStatus = status
+	log.Debug("---------------------------------------")
 }
 
 //等待玩家进入
 func (room *Room) waitAllPlayerEnter() {
 	log_time := time.Now().Unix()
-	log.Debug(log_time, room, "Room.waitAllPlayerEnter")
+	log.Debug(log_time, room, "waitAllPlayerEnter")
 	breakTimerTime := time.Duration(0)
 	timeout := time.Duration(room.config.WaitPlayerEnterRoomTimeout) * time.Second
 	for {
@@ -174,10 +188,10 @@ func (room *Room) waitAllPlayerEnter() {
 			return
 		case op := <-room.roomOperateCh:
 			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom || op.Op == OperateReadyRoom{
-				log.Debug(time.Now().Unix(), room, "Room.waitAllPlayerEnter catch operate:", op)
+				log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
 				room.dealPlayerOperate(op)
 				if room.isEnterPlayerEnough() && room.isAllPlayerReady(){
-					room.switchStatus(RoomStatusConfirmMaster)
+					room.switchStatus(RoomStatusGetMaster)
 					return
 				}
 			}
@@ -185,25 +199,68 @@ func (room *Room) waitAllPlayerEnter() {
 	}
 }
 
-func (room *Room) waitXiazhu(player *Player) bool{
-	select {
-	case <- time.After(time.Second * 10):
-		data := &OperateXiazhuData{Score:1}
-		op := NewOperateXiazhu(player, data)
-		room.PlayerOperate(op)
-	case op := <-room.xiazhuCh[player.position]:
-		log.Debug(time.Now().Unix(), player, "Player.waitXiazhu:", op.Data)
-		if xiazhu_data, ok := op.Data.(*OperateXiazhuData); ok {
-			player.xiazhuScore = xiazhu_data.Score
+func (room *Room) waitBet(player *Player) bool{
+	for{
+		select {
+		case <- time.After(time.Second * 10):
+			data := &OperateBetData{Score:1}
+			op := NewOperateBet(player, data)
+			log.Debug(player, "waitBet do PlayerOperate")
+			room.PlayerOperate(op)
+			continue
+		case op := <-room.BetCh[player.position]:
+			log.Debug(time.Now().Unix(), player, "Player.waitBet:", op.Data)
+			room.dealPlayerOperate(op)
 			return true
 		}
-		return false
 	}
-	log.Debug(time.Now().Unix(), player, "Player.waitXiazhu fasle")
+
+	log.Debug(time.Now().Unix(), player, "Player.waitBet fasle")
 	return false
 }
 
-//TODO
+func (room *Room) waitShowCards(player *Player) bool{
+	for{
+		select {
+		case <- time.After(time.Second * 10):
+			data := &OperateShowCardsData{}
+			op := NewOperateShowCards(player, data)
+			log.Debug(player, "waitShowCards do PlayerOperate")
+			room.PlayerOperate(op)
+			continue
+		case op := <-room.ShowCardsCh[player.position]:
+			log.Debug(time.Now().Unix(), player, "Player.waitShowCards:", op.Data)
+			room.dealPlayerOperate(op)
+			return true
+		}
+	}
+
+	log.Debug(time.Now().Unix(), player, "Player.waitShowCards fasle")
+	return false
+}
+
+func (room *Room) waitPlayerReady(player *Player) bool{
+	for{
+		select {
+		case <- time.After(time.Second * 10):
+			data := &OperateReadyRoomData{}
+			op := NewOperateReadyRoom(player, data)
+			log.Debug(player, "waitPlayerReady do PlayerOperate")
+			room.PlayerOperate(op)
+			continue
+		case op := <-room.roomOperateCh:
+			if op.Op == OperateReadyRoom {
+				log.Debug(time.Now().Unix(), player, "Player.waitPlayerReady")
+				room.dealPlayerOperate(op)
+				return true
+			}
+		}
+	}
+
+	log.Debug(time.Now().Unix(), player, "Player.waitPlayerReady fasle")
+	return false
+}
+
 func (room *Room) waitAllPlayerReady() {
 	log.Debug(time.Now().Unix(), room, "Room.waitAllPlayerReady")
 	/*if room.playedGameCnt == 0 {
@@ -211,9 +268,13 @@ func (room *Room) waitAllPlayerReady() {
 		log.Debug(time.Now().Unix(), room, "RoomStatusStartPlayGame")
 		return
 	}*/
+	//等待所有玩家准备
+	for _, player := range room.players {
+		go room.waitPlayerReady(player)
+	}
 	for  {
 		if room.isAllPlayerReady() {
-			room.roomStatus = RoomStatusConfirmMaster
+			room.roomStatus = RoomStatusGetMaster
 			log.Debug(time.Now().Unix(), room, "RoomStatusStartPlayGame")
 			return
 		}
@@ -221,8 +282,8 @@ func (room *Room) waitAllPlayerReady() {
 	}
 }
 
-func (room *Room) confirmMaster() {
-	log.Debug(time.Now().Unix(), room, "Room.confirmMaster")
+func (room *Room) getMaster() {
+	log.Debug(time.Now().Unix(), room, "Room.getMaster", room.playedGameCnt)
 
 	// 重置牌池, 洗牌
 	room.cardPool.ReGenerate()
@@ -233,19 +294,34 @@ func (room *Room) confirmMaster() {
 
 	//通知所有玩家确定了庄家
 	for _, player := range room.players {
-		player.OnConfirmMaster()
+		player.OnGetMaster()
+	}
+
+	//等待所有玩家下注，庄家除外
+	for _, player := range room.players {
+		if !player.IsMaster(){
+			go room.waitBet(player)
+		}
 	}
 
 	room.switchStatus(RoomStatusPlayGame)
-
-	//等待所有玩家下注
-	for _, player := range room.players {
-		go room.waitXiazhu(player)
-	}
 }
 
 func (room *Room) playGame() {
-	log.Debug(time.Now().Unix(), room, "Room.playGame")
+	log.Debug(time.Now().Unix(), room, "Room.playGame", room.playedGameCnt)
+
+	cnt := 0
+	for !room.isAllPlayerBet() {
+		time.Sleep(time.Millisecond * 1000)
+		log.Debug(time.Now().Unix(), "cnt:", cnt)
+		cnt ++
+	}
+
+	//通知所有玩家下注金额
+	for _, player := range room.players {
+		player.OnAllBet()
+	}
+	time.Sleep(time.Second * 2)
 
 	//发初始牌给所有玩家
 	room.putInitCardsToPlayers()
@@ -255,17 +331,69 @@ func (room *Room) playGame() {
 		player.OnGetInitCards()
 	}
 
+	//等待所有玩家亮牌
+	for _, player := range room.players {
+		go room.waitShowCards(player)
+	}
+
 	room.switchStatus(RoomStatusShowCards)
 }
 
-//TODO
 func (room *Room) showCards() {
+	log.Debug(time.Now().Unix(), room, "Room.showCards", room.playedGameCnt)
 
+	cnt := 0
+	for !room.isAllPlayerShow() {
+		time.Sleep(time.Millisecond * 1000)
+		log.Debug(time.Now().Unix(), "cnt:", cnt)
+		cnt ++
+	}
+
+	//通知所有玩家亮牌并结算
+	for _, player := range room.players {
+		player.OnAllShowCards()
+	}
+
+	time.Sleep(time.Second * 5)
+	room.switchStatus(RoomStatusEndPlayGame)
+}
+
+func (room *Room) endPlayGame() {
+	room.playedGameCnt++
+	log.Debug(time.Now().Unix(), room, "Room.endPlayGame cnt :", room.playedGameCnt)
+	if room.isRoomEnd() {
+		log.Debug(time.Now().Unix(), room, "Room.endPlayGame room end")
+		room.switchStatus(RoomStatusRoomEnd)
+	} else {
+		for _, player := range room.players {
+			player.OnEndPlayGame()
+		}
+		log.Debug(time.Now().Unix(), room, "Room.endPlayGame restart play game")
+		room.switchStatus(RoomStatusWaitAllPlayerReady)
+	}
 }
 
 func (room *Room) isAllPlayerReady() bool{
 	for _, player := range room.players {
 		if !player.isReady {
+			return false
+		}
+	}
+	return true
+}
+
+func (room *Room) isAllPlayerBet() bool{
+	for _, player := range room.players {
+		if !player.IsMaster() && !player.GetIsBet() {
+			return false
+		}
+	}
+	return true
+}
+
+func (room *Room) isAllPlayerShow() bool{
+	for _, player := range room.players {
+		if !player.GetIsShow() {
 			return false
 		}
 	}
@@ -280,8 +408,9 @@ func (room *Room) dealPlayerOperate(op *Operate) bool{
 	case OperateEnterRoom:
 		if _, ok := op.Data.(*OperateEnterRoomData); ok {
 			if room.addPlayer(op.Operator) {
-				//	玩家进入成功
-				op.Operator.EnterRoom(room, len(room.players) - 1)
+				//玩家进入成功
+				player_pos := room.getMinUsablePosition()
+				op.Operator.EnterRoom(room, player_pos)
 				log.Debug(log_time, room, "Room.dealPlayerOperate player enter :", op.Operator)
 				op.ResultCh <- true
 				room.broadcastPlayerSuccessOperated(op)
@@ -310,9 +439,53 @@ func (room *Room) dealPlayerOperate(op *Operate) bool{
 			return true
 		}
 
+	case OperateBet:
+		if bet_data, ok := op.Data.(*OperateBetData); ok {
+			log.Debug(log_time, room, "Room.dealPlayerOperate player bet :", op.Operator)
+			op.Operator.Bet(bet_data.Score)
+			op.ResultCh <- true
+			room.broadcastPlayerSuccessOperated(op)
+			return true
+		}
+
+	case OperateShowCards:
+		if _, ok := op.Data.(*OperateShowCardsData); ok {
+			log.Debug(log_time, room, "Room.dealPlayerOperate player show cards :", op.Operator)
+			op.Operator.ShowCards()
+			op.ResultCh <- true
+			room.broadcastPlayerSuccessOperated(op)
+			return true
+		}
+
 	}
 	op.ResultCh <- false
 	return false
+}
+
+//查找房间中未被占用的最新的position
+func (room *Room) getMinUsablePosition() (int32)  {
+	log.Debug(time.Now().Unix(), room, "getMinUsablePosition")
+	//获取所有已经被占用的position
+	player_positions := make([]int32, 0)
+	for _, room_player := range room.players {
+		player_positions = append(player_positions, room_player.GetPosition())
+	}
+
+	//查找未被占用的position中最小的
+	room_max_position := int32(room.config.MaxPlayerNum - 1)
+	for i := int32(0); i <= room_max_position; i++ {
+		is_occupied := false
+		for _, occupied_pos := range player_positions{
+			if occupied_pos == i {
+				is_occupied = true
+				break
+			}
+		}
+		if !is_occupied {
+			return i
+		}
+	}
+	return room_max_position
 }
 
 //给所有玩家发初始化的5张牌
@@ -356,7 +529,7 @@ func (room *Room) delPlayer(player *Player)  {
 }
 
 func (room *Room) broadcastPlayerSuccessOperated(op *Operate) {
-	log.Debug(time.Now().Unix(), room, "Room.broadcastPlayerSuccessOperated :", op)
+	log.Debug(time.Now().Unix(), room, "Room.broadcastPlayerSucOp :", op)
 	for _, player := range room.players {
 		player.OnPlayerSuccessOperated(op)
 	}
@@ -397,4 +570,34 @@ func (room *Room) String() string {
 		return "{room=nil}"
 	}
 	return fmt.Sprintf("{room=%v}", room.GetId())
+}
+
+func (room *Room) GetScoreLow() int32 {
+	return int32(room.config.ScoreLow)
+}
+
+func (room *Room) GetScoreHigh() int32 {
+	return int32(room.config.ScoreHigh)
+}
+
+func (room *Room) clearChannel() {
+	for idx := 0 ; idx < room.config.MaxPlayerNum; idx ++ {
+		select {
+		case op := <-room.BetCh[idx]:
+			op.ResultCh <- false
+		default:
+		}
+
+		select {
+		case op := <-room.ShowCardsCh[idx]:
+			op.ResultCh <- false
+		default:
+		}
+
+		select {
+		case op := <-room.ReadyCh[idx]:
+			op.ResultCh <- false
+		default:
+		}
+	}
 }

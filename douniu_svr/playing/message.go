@@ -8,7 +8,10 @@ import (
 type MsgType	int
 const  (
 	MsgGetInitCards	MsgType = iota + 1
-	MsgConfirmMaster
+	MsgGetMaster
+	MsgBet
+	MsgShowCards
+
 	MsgEnterRoom
 	MsgLeaveRoom
 	MsgGameEnd
@@ -19,6 +22,12 @@ func (msgType MsgType) String() string {
 	switch msgType {
 	case MsgGetInitCards:
 		return "MsgGetInitCards"
+	case MsgGetMaster:
+		return "MsgGetMaster"
+	case MsgBet:
+		return "MsgBet"
+	case MsgShowCards:
+		return "MsgShowCards"
 	case MsgEnterRoom:
 		return "MsgEnterRoom"
 	case MsgLeaveRoom:
@@ -53,10 +62,11 @@ func newMsg(t MsgType, owner *Player, data interface{}) *Message {
 }
 
 //玩家获得初始牌的消息
-type ConfirmMasterMsgData struct {
+type GetMasterMsgData struct {
+	Scores   []int32
 }
-func NewConfirmMasterMsg(owner *Player, data *ConfirmMasterMsgData) *Message {
-	return newMsg(MsgConfirmMaster, owner, data)
+func NewGetMasterMsg(owner *Player, data *GetMasterMsgData) *Message {
+	return newMsg(MsgGetMaster, owner, data)
 }
 
 //玩家获得初始牌的消息
@@ -65,6 +75,18 @@ type GetInitCardsMsgData struct {
 }
 func NewGetInitCardsMsg(owner *Player, data *GetInitCardsMsgData) *Message {
 	return newMsg(MsgGetInitCards, owner, data)
+}
+
+//玩家下注的消息
+type BetMsgData struct {}
+func NewBetMsg(owner *Player, data *BetMsgData) *Message {
+	return newMsg(MsgBet, owner, data)
+}
+
+//玩家亮牌的消息
+type ShowCardsMsgData struct {}
+func NewShowCardsMsg(owner *Player, data *ShowCardsMsgData) *Message {
+	return newMsg(MsgShowCards, owner, data)
 }
 
 //玩家进入房间的消息
