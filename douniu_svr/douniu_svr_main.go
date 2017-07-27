@@ -21,14 +21,61 @@ func help() {
 	log.Debug(playing.OperateLeaveRoom, int(playing.OperateLeaveRoom))
 	log.Debug(playing.OperateBet, int(playing.OperateBet), "1(score)")
 	log.Debug(playing.OperateShowCards, int(playing.OperateShowCards))
+	log.Debug(playing.OperateSeeCards, int(playing.OperateSeeCards))
 	log.Debug("-----------------help---------------------")
 }
 
 type PlayerObserver struct {}
 func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 	log_time := time.Now().Unix()
-	log.Debug(log_time, player, "receive msg", msg)
-	log.Debug(log_time, player, "playingcards :", player.GetPlayingCards())
+	switch msg.Type {
+	case playing.MsgEnterRoom:
+		if enter_data, ok := msg.Data.(*playing.EnterRoomMsgData); ok {
+			log.Debug(log_time, "EnterPlayer", enter_data.EnterPlayer)
+		}
+	case playing.MsgReadyRoom:
+		if enter_data, ok := msg.Data.(*playing.ReadyRoomMsgData); ok {
+			log.Debug(log_time, "ReadyPlayer", enter_data.ReadyPlayer)
+		}
+	case playing.MsgLeaveRoom:
+		if enter_data, ok := msg.Data.(*playing.LeaveRoomMsgData); ok {
+			log.Debug(log_time, "LeavePlayer", enter_data.LeavePlayer)
+		}
+	case playing.MsgGameEnd:
+		if _, ok := msg.Data.(*playing.GameEndMsgData); ok {
+			log.Debug(log_time, "MsgGameEnd")
+		}
+	case playing.MsgRoomClosed:
+		if _, ok := msg.Data.(*playing.RoomClosedMsgData); ok {
+			log.Debug(log_time, "MsgRoomClosed")
+		}
+
+	case playing.MsgGetInitCards:
+		if init_data, ok := msg.Data.(*playing.GetInitCardsMsgData); ok {
+			log.Debug(log_time, "PlayingCards", init_data.PlayingCards)
+		}
+	case playing.MsgGetMaster:
+		if init_data, ok := msg.Data.(*playing.GetMasterMsgData); ok {
+			log.Debug(log_time, "Scores", init_data.Scores)
+		}
+	case playing.MsgBet:
+		if _, ok := msg.Data.(*playing.BetMsgData); ok {
+			log.Debug(log_time, "MsgBet")
+		}
+	case playing.MsgSeeCards:
+		if see_data, ok := msg.Data.(*playing.SeeCardsMsgData); ok {
+			log.Debug(log_time, "SeePlayer", see_data.SeePlayer)
+		}
+	case playing.MsgShowCards:
+		if show_data, ok := msg.Data.(*playing.ShowCardsMsgData); ok {
+			log.Debug(log_time, "ShowPlayer", show_data.ShowPlayer, show_data.Paixing, show_data.PaixingMultiple)
+		}
+	case playing.MsgJiesuan:
+		if jiesuan_data, ok := msg.Data.(*playing.JiesuanMsgData); ok {
+			log.Debug(log_time, "jiesuan_data", jiesuan_data.Scores[0].P, jiesuan_data.Scores[0].Paixing, jiesuan_data.Scores[0].PaixingMultiple)
+		}
+
+	}
 }
 
 func main() {
@@ -36,7 +83,7 @@ func main() {
 
 	//init room
 	conf := playing.NewRoomConfig()
-	conf.Init(1, 2)
+	conf.Init(1, 2, playing.GameTypeLunliu)
 	room := playing.NewRoom(util.UniqueId(), conf)
 	room.Start()
 
@@ -89,6 +136,8 @@ func main() {
 			curPlayer.OperateBet(int32(score))
 		case playing.OperateShowCards:
 			curPlayer.OperateShowCards()
+		case playing.OperateSeeCards:
+			curPlayer.OperateSeeCards()
 		}
 	}
 }

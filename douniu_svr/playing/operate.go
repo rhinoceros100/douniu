@@ -11,6 +11,7 @@ const (
 
 	OperateBet
 	OperateShowCards
+	OperateSeeCards
 )
 
 func (operateType OperateType) String() string {
@@ -25,6 +26,8 @@ func (operateType OperateType) String() string {
 		return "OperateBet"
 	case OperateShowCards:
 		return "OperateShowCards"
+	case OperateSeeCards:
+		return "OperateSeeCards"
 	}
 	return "unknow OperateType"
 }
@@ -77,7 +80,15 @@ func NewOperateBet(operator *Player, data *OperateBetData) *Operate {
 	return newOperate(OperateBet, operator, data)
 }
 
-type OperateShowCardsData struct {}
+type OperateShowCardsData struct {
+	Paixing int
+	PaixingMultiple int
+}
 func NewOperateShowCards(operator *Player, data *OperateShowCardsData) *Operate {
 	return newOperate(OperateShowCards, operator, data)
+}
+
+type OperateSeeCardsData struct {}
+func NewOperateSeeCards(operator *Player, data *OperateSeeCardsData) *Operate {
+	return newOperate(OperateSeeCards, operator, data)
 }

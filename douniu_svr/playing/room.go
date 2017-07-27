@@ -60,9 +60,9 @@ type Room struct {
 	//end playingGameData, reset when start playing game
 
 	roomOperateCh		chan *Operate
+	roomReadyCh		chan *Operate
 	BetCh		[]chan *Operate				//下注
 	ShowCardsCh	[]chan *Operate				//亮牌
-	ReadyCh		[]chan *Operate				//准备
 
 	stop bool
 }
@@ -78,14 +78,13 @@ func NewRoom(id uint64, config *RoomConfig) *Room {
 		playedGameCnt:	0,
 
 		roomOperateCh: make(chan *Operate, 1024),
+		roomReadyCh: make(chan *Operate, 1024),
 		BetCh: make([]chan *Operate, config.MaxPlayerNum),
 		ShowCardsCh: make([]chan *Operate, config.MaxPlayerNum),
-		ReadyCh: make([]chan *Operate, config.MaxPlayerNum),
 	}
 	for idx := 0; idx < config.MaxPlayerNum; idx ++ {
 		room.BetCh[idx] = make(chan *Operate, 1)
 		room.ShowCardsCh[idx] = make(chan *Operate, 1)
-		room.ReadyCh[idx] = make(chan *Operate, 1)
 	}
 	return room
 }
@@ -99,8 +98,10 @@ func (room *Room) PlayerOperate(op *Operate) {
 	log.Debug(time.Now().Unix(), room, op.Operator, "PlayerOperate", op.Op, " pos:", pos)
 
 	switch op.Op {
-	case OperateEnterRoom, OperateLeaveRoom, OperateReadyRoom:
+	case OperateEnterRoom, OperateLeaveRoom:
 		room.roomOperateCh <- op
+	case OperateReadyRoom:
+		room.roomReadyCh <- op
 	case OperateBet:
 		room.BetCh[pos] <- op
 	case OperateShowCards:
@@ -114,6 +115,7 @@ func (room *Room) addObserver(observer RoomObserver) {
 
 func (room *Room) Start() {
 	go func() {
+		start_time := time.Now().Unix()
 		for  {
 			if !room.stop {
 				room.checkStatus()
@@ -122,7 +124,8 @@ func (room *Room) Start() {
 				break
 			}
 		}
-		log.Debug("over^^")
+		end_time := time.Now().Unix()
+		log.Debug(end_time - start_time, "over^^")
 	}()
 }
 
@@ -145,6 +148,10 @@ func (room *Room) checkStatus() {
 	}
 }
 
+func (room *Room) GetPlayerNum() int {
+	return len(room.players)
+}
+
 func (room *Room) isRoomEnd() bool {
 	return room.playedGameCnt >= room.config.MaxPlayGameCnt
 }
@@ -162,7 +169,7 @@ func (room *Room) close() {
 }
 
 func (room *Room) isEnterPlayerEnough() bool {
-	length := len(room.players)
+	length := room.GetPlayerNum()
 	log.Debug(time.Now().Unix(), room, "Room.isEnterPlayerEnough, player num :", length, ", need :", room.config.NeedPlayerNum)
 	return length >= room.config.NeedPlayerNum
 }
@@ -173,7 +180,7 @@ func (room *Room) switchStatus(status RoomStatusType) {
 	log.Debug("---------------------------------------")
 }
 
-//等待玩家进入
+//等待游戏开局
 func (room *Room) waitAllPlayerEnter() {
 	log_time := time.Now().Unix()
 	log.Debug(log_time, room, "waitAllPlayerEnter")
@@ -187,22 +194,47 @@ func (room *Room) waitAllPlayerEnter() {
 			room.switchStatus(RoomStatusRoomEnd) //超时发现没有足够的玩家都进入房间了，则结束
 			return
 		case op := <-room.roomOperateCh:
-			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom || op.Op == OperateReadyRoom{
+			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom{
 				log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
 				room.dealPlayerOperate(op)
-				if room.isEnterPlayerEnough() && room.isAllPlayerReady(){
+				go room.waitInitPlayerReady(op.Operator)
+
+				if room.isEnterPlayerEnough() && room.isAllPlayerReady() && room.roomStatus == RoomStatusWaitAllPlayerEnter{
 					room.switchStatus(RoomStatusGetMaster)
+					go room.waitPlayerJoin()
 					return
 				}
 			}
+		case op := <-room.roomReadyCh:
+			log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
+			room.dealPlayerOperate(op)
+			if room.isEnterPlayerEnough() && room.isAllPlayerReady() && room.roomStatus == RoomStatusWaitAllPlayerEnter{
+				room.switchStatus(RoomStatusGetMaster)
+				go room.waitPlayerJoin()
+				return
+			}
 		}
+	}
+}
+
+func (room *Room) waitPlayerJoin() {
+	log.Debug(time.Now().Unix(), room, "waitPlayerJoin")
+	for {
+		select {
+		case op := <-room.roomOperateCh:
+			if op.Op == OperateEnterRoom{
+				log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
+				room.dealPlayerOperate(op)
+			}
+		}
+		log.Debug(time.Now().Unix(), room, "waitPlayerJoin for")
 	}
 }
 
 func (room *Room) waitBet(player *Player) bool{
 	for{
 		select {
-		case <- time.After(time.Second * 10):
+		case <- time.After(time.Second * room.config.WaitBetSec):
 			data := &OperateBetData{Score:1}
 			op := NewOperateBet(player, data)
 			log.Debug(player, "waitBet do PlayerOperate")
@@ -222,7 +254,7 @@ func (room *Room) waitBet(player *Player) bool{
 func (room *Room) waitShowCards(player *Player) bool{
 	for{
 		select {
-		case <- time.After(time.Second * 10):
+		case <- time.After(time.Second * room.config.WaitShowCardsSec):
 			data := &OperateShowCardsData{}
 			op := NewOperateShowCards(player, data)
 			log.Debug(player, "waitShowCards do PlayerOperate")
@@ -239,21 +271,29 @@ func (room *Room) waitShowCards(player *Player) bool{
 	return false
 }
 
-func (room *Room) waitPlayerReady(player *Player) bool{
+func (room *Room) waitInitPlayerReady(player *Player) {
+	time.Sleep(time.Second * room.config.WaitReadySec)
+	if room.roomStatus == RoomStatusWaitAllPlayerEnter && !player.GetIsReady() {
+		data := &OperateReadyRoomData{}
+		op := NewOperateReadyRoom(player, data)
+		log.Debug(player, "waitInitPlayerReady do PlayerOperate")
+		room.PlayerOperate(op)
+	}
+}
+
+func (room *Room) waitPlayerReady(player *Player) bool {
 	for{
 		select {
-		case <- time.After(time.Second * 10):
+		case <- time.After(time.Second * room.config.WaitReadySec):
 			data := &OperateReadyRoomData{}
 			op := NewOperateReadyRoom(player, data)
 			log.Debug(player, "waitPlayerReady do PlayerOperate")
 			room.PlayerOperate(op)
 			continue
-		case op := <-room.roomOperateCh:
-			if op.Op == OperateReadyRoom {
-				log.Debug(time.Now().Unix(), player, "Player.waitPlayerReady")
-				room.dealPlayerOperate(op)
-				return true
-			}
+		case op := <-room.roomReadyCh:
+			log.Debug(time.Now().Unix(), player, "Player.waitPlayerReady")
+			room.dealPlayerOperate(op)
+			return true
 		}
 	}
 
@@ -278,7 +318,7 @@ func (room *Room) waitAllPlayerReady() {
 			log.Debug(time.Now().Unix(), room, "RoomStatusStartPlayGame")
 			return
 		}
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 100)
 	}
 }
 
@@ -312,8 +352,8 @@ func (room *Room) playGame() {
 
 	cnt := 0
 	for !room.isAllPlayerBet() {
-		time.Sleep(time.Millisecond * 1000)
-		log.Debug(time.Now().Unix(), "cnt:", cnt)
+		time.Sleep(time.Millisecond * 100)
+		//log.Debug(time.Now().Unix(), "cnt:", cnt)
 		cnt ++
 	}
 
@@ -321,7 +361,8 @@ func (room *Room) playGame() {
 	for _, player := range room.players {
 		player.OnAllBet()
 	}
-	time.Sleep(time.Second * 2)
+
+	time.Sleep(time.Second * room.config.AfterBetSleep)
 
 	//发初始牌给所有玩家
 	room.putInitCardsToPlayers()
@@ -344,17 +385,22 @@ func (room *Room) showCards() {
 
 	cnt := 0
 	for !room.isAllPlayerShow() {
-		time.Sleep(time.Millisecond * 1000)
+		time.Sleep(time.Millisecond * 500)
 		log.Debug(time.Now().Unix(), "cnt:", cnt)
 		cnt ++
 	}
 
-	//通知所有玩家亮牌并结算
+	time.Sleep(time.Second)
+
+	//结算
+	msg := room.jiesuan()
+
+	//通知所有玩家结算结果
 	for _, player := range room.players {
-		player.OnAllShowCards()
+		player.OnJiesuan(msg)
 	}
 
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * room.config.AfterShowCardsSleep)
 	room.switchStatus(RoomStatusEndPlayGame)
 }
 
@@ -373,6 +419,115 @@ func (room *Room) endPlayGame() {
 	}
 }
 
+func (room *Room) jiesuan() *Message {
+	master_player := room.masterPlayer
+	master_paixing := master_player.GetPaixing()
+	master_paixing_multiple := master_player.GetPaixingMultiple()
+	master_base_multiple := master_player.GetBaseMultiple()
+	master_maxid := master_player.GetMaxid()
+	master_jiesuan_data := &PlayerJiesuanData{
+		P:master_player,
+		Score:0,
+		Paixing:master_paixing,
+		PaixingMultiple:master_paixing_multiple,
+		BaseMultiple:int(master_base_multiple),
+	}
+	max_paixing := master_paixing
+	max_id := master_maxid
+	master_player.SetLeizhu(0)
+
+	data := &JiesuanMsgData{}
+	data.Scores = make([]*PlayerJiesuanData, 0)
+	for _, player := range room.players {
+		if player != master_player {
+			player_paixing := player.GetPaixing()
+			player_maxid := player.GetMaxid()
+			player_paixing_multiple := player.GetPaixingMultiple()
+			player_base_multiple := player.GetBaseMultiple()
+			player_bet_score := player.GetBetScore()
+			round_score := player_bet_score * player_base_multiple * int32(player_paixing_multiple)
+			player_jiesuan_data := &PlayerJiesuanData{
+				P:player,
+				Score:0,
+				Paixing:player_paixing,
+				PaixingMultiple:player_paixing_multiple,
+				BaseMultiple:int(player_base_multiple),
+			}
+
+			if player_paixing > master_paixing || (player_paixing == master_paixing && player_maxid > master_maxid){
+				player.SetRoundScore(round_score)
+				player.AddTotalScore(round_score)
+				player_jiesuan_data.Score = round_score
+
+				master_player.SetRoundScore(-round_score)
+				master_player.AddTotalScore(-round_score)
+				master_jiesuan_data.Score -= round_score
+
+				//垒注
+				if player.GetLeizhu() != 0 {
+					player.SetLeizhu(0)
+				}else{
+					if round_score + player_bet_score > room.GetScoreHigh() {
+						player.SetLeizhu(round_score + player_bet_score)
+					}else {
+						player.SetLeizhu(0)
+					}
+				}
+
+				//牛牛上庄需记录上庄谁得了牛牛
+				if player_paixing >= card.DouniuType_Niuniu{
+					if player_paixing > max_paixing || (player_paixing == max_paixing && player_maxid > max_id){
+						max_paixing = player_paixing
+						max_id = player_maxid
+						room.lastWinPlayer = player
+					}
+				}
+
+			}else{
+				player.SetRoundScore(-round_score)
+				player.AddTotalScore(-round_score)
+				player_jiesuan_data.Score = -round_score
+
+				master_player.SetRoundScore(round_score)
+				master_player.AddTotalScore(round_score)
+				master_jiesuan_data.Score += round_score
+
+				player.SetLeizhu(0)
+			}
+			data.Scores = append(data.Scores, player_jiesuan_data)
+		}
+	}
+	data.Scores = append(data.Scores, master_jiesuan_data)
+	return NewJiesuanMsg(nil, data)
+}
+
+//取指定玩家的下一个玩家
+func (room *Room) nextPlayer(player *Player) *Player {
+	pos := player.GetPosition()
+
+	max_player_num := int32(room.config.MaxPlayerNum)
+	for next_pos := pos + 1; next_pos < max_player_num; next_pos++ {
+		for _, room_player := range room.players {
+			if room_player.GetPosition() == next_pos {
+				log.Debug(time.Now().Unix(), ", nextPlayer", ", pos:", pos, ", next_pos:", next_pos)
+				return room_player
+			}
+		}
+	}
+
+	for next_pos := int32(0); next_pos < pos; next_pos++ {
+		for _, room_player := range room.players {
+			if room_player.GetPosition() == next_pos {
+				log.Debug(time.Now().Unix(), ", nextPlayer", ", pos:", pos, ", next_pos:", next_pos)
+				return room_player
+			}
+		}
+	}
+
+	log.Debug(time.Now().Unix(), ", nextPlayer", ", pos:", pos, ", next_pos:", 0)
+	return room.players[0]
+}
+
 func (room *Room) isAllPlayerReady() bool{
 	for _, player := range room.players {
 		if !player.isReady {
@@ -384,7 +539,7 @@ func (room *Room) isAllPlayerReady() bool{
 
 func (room *Room) isAllPlayerBet() bool{
 	for _, player := range room.players {
-		if !player.IsMaster() && !player.GetIsBet() {
+		if player.GetIsPlaying() && !player.IsMaster() && !player.GetIsBet() {
 			return false
 		}
 	}
@@ -393,7 +548,7 @@ func (room *Room) isAllPlayerBet() bool{
 
 func (room *Room) isAllPlayerShow() bool{
 	for _, player := range room.players {
-		if !player.GetIsShow() {
+		if player.GetIsPlaying() && !player.GetIsShowCards() {
 			return false
 		}
 	}
@@ -449,9 +604,20 @@ func (room *Room) dealPlayerOperate(op *Operate) bool{
 		}
 
 	case OperateShowCards:
-		if _, ok := op.Data.(*OperateShowCardsData); ok {
+		if show_data, ok := op.Data.(*OperateShowCardsData); ok {
 			log.Debug(log_time, room, "Room.dealPlayerOperate player show cards :", op.Operator)
 			op.Operator.ShowCards()
+			op.ResultCh <- true
+			show_data.Paixing = op.Operator.GetPaixing()
+			show_data.PaixingMultiple = op.Operator.GetPaixingMultiple()
+			room.broadcastPlayerSuccessOperated(op)
+			return true
+		}
+
+	case OperateSeeCards:
+		if _, ok := op.Data.(*OperateSeeCardsData); ok {
+			log.Debug(log_time, room, "Room.dealPlayerOperate player see cards :", op.Operator)
+			op.Operator.SeeCards()
 			op.ResultCh <- true
 			room.broadcastPlayerSuccessOperated(op)
 			return true
@@ -491,9 +657,9 @@ func (room *Room) getMinUsablePosition() (int32)  {
 //给所有玩家发初始化的5张牌
 func (room *Room) putInitCardsToPlayers() {
 	log.Debug(time.Now().Unix(), room, "Room.initAllPlayer")
-	for _, player := range room.players {
+	/*for _, player := range room.players {
 		player.Reset()
-	}
+	}*/
 
 	for num := 0; num < card.NIUNIU_INIT_CARD_NUM; num++ {
 		for _, player := range room.players {
@@ -504,7 +670,10 @@ func (room *Room) putInitCardsToPlayers() {
 
 //添加玩家
 func (room *Room) addPlayer(player *Player) bool {
-	if room.roomStatus != RoomStatusWaitAllPlayerEnter {
+	/*if room.roomStatus != RoomStatusWaitAllPlayerEnter {
+		return false
+	}*/
+	if room.GetPlayerNum() >= room.config.MaxPlayerNum {
 		return false
 	}
 	room.players = append(room.players, player)
@@ -558,10 +727,15 @@ func (room *Room) selectMasterPlayer() *Player {
 		return room.randomPlayer()
 	}
 
-	if room.lastWinPlayer == nil {//流局，上一盘没有人胡牌
-		return room.randomPlayer()
-	}
+	if room.config.PlayGameType == GameTypeNiuniu {
+		if room.lastWinPlayer == nil {//流局，上一盘没有人胡牌
+			return room.randomPlayer()
+		}
 
+		return room.lastWinPlayer
+	}else if room.config.PlayGameType == GameTypeLunliu {
+		return room.nextPlayer(room.masterPlayer)
+	}
 	return room.lastWinPlayer
 }
 
@@ -590,12 +764,6 @@ func (room *Room) clearChannel() {
 
 		select {
 		case op := <-room.ShowCardsCh[idx]:
-			op.ResultCh <- false
-		default:
-		}
-
-		select {
-		case op := <-room.ReadyCh[idx]:
 			op.ResultCh <- false
 		default:
 		}

@@ -11,8 +11,11 @@ const  (
 	MsgGetMaster
 	MsgBet
 	MsgShowCards
+	MsgSeeCards
+	MsgJiesuan
 
 	MsgEnterRoom
+	MsgReadyRoom
 	MsgLeaveRoom
 	MsgGameEnd
 	MsgRoomClosed
@@ -28,8 +31,14 @@ func (msgType MsgType) String() string {
 		return "MsgBet"
 	case MsgShowCards:
 		return "MsgShowCards"
+	case MsgSeeCards:
+		return "MsgSeeCards"
+	case MsgJiesuan:
+		return "MsgJiesuan"
 	case MsgEnterRoom:
 		return "MsgEnterRoom"
+	case MsgReadyRoom:
+		return "MsgReadyRoom"
 	case MsgLeaveRoom:
 		return "MsgEnterRoom"
 	case MsgGameEnd:
@@ -84,9 +93,37 @@ func NewBetMsg(owner *Player, data *BetMsgData) *Message {
 }
 
 //玩家亮牌的消息
-type ShowCardsMsgData struct {}
+type ShowCardsMsgData struct {
+	ShowPlayer *Player
+	Paixing int
+	PaixingMultiple int
+}
 func NewShowCardsMsg(owner *Player, data *ShowCardsMsgData) *Message {
 	return newMsg(MsgShowCards, owner, data)
+}
+
+type PlayerJiesuanData struct {
+	P *Player
+	Score int32
+	Paixing int
+	PaixingMultiple int
+	BaseMultiple int
+}
+
+//结算消息
+type JiesuanMsgData struct {
+	Scores []*PlayerJiesuanData
+}
+func NewJiesuanMsg(owner *Player, data *JiesuanMsgData) *Message {
+	return newMsg(MsgJiesuan, owner, data)
+}
+
+//玩家看牌的消息
+type SeeCardsMsgData struct {
+	SeePlayer *Player
+}
+func NewSeeCardsMsg(owner *Player, data *SeeCardsMsgData) *Message {
+	return newMsg(MsgSeeCards, owner, data)
 }
 
 //玩家进入房间的消息
@@ -96,6 +133,14 @@ type EnterRoomMsgData struct {
 }
 func NewEnterRoomMsg(owner *Player, data *EnterRoomMsgData) *Message {
 	return newMsg(MsgEnterRoom, owner, data)
+}
+
+//玩家进入房间的消息
+type ReadyRoomMsgData struct {
+	ReadyPlayer *Player
+}
+func NewReadyRoomMsg(owner *Player, data *ReadyRoomMsgData) *Message {
+	return newMsg(MsgReadyRoom, owner, data)
 }
 
 //玩家离开房间的消息

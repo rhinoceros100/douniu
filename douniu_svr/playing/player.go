@@ -17,8 +17,17 @@ type Player struct {
 	room			*Room			//玩家所在的房间
 	isReady			bool
 	isBet			bool
-	isShow			bool
-	BetScore             int32                   //每局下注分数
+	isShowCards		bool
+	isSeeCards		bool
+	isPlaying		bool
+	BetScore             	int32                   //每局下注分数
+	BaseMultiple            int32                   //抢庄倍数
+	Paixing		        int                     //牌型
+	PaixingMultiple	        int                     //牌型倍数
+	maxid		        int                     //手牌最大的id
+	roundScore              int32                   //本轮得分
+	totalScore              int32                   //总得分
+	leizhu		        int32                   //垒注
 
 	playingCards 	*card.PlayingCards	//玩家手上的牌
 	observers	 []PlayerObserver
@@ -29,8 +38,17 @@ func NewPlayer(id uint64) *Player {
 		id:		id,
 		position:       10,
 		isReady:        false,
-		isBet:       false,
-		isShow:     false,
+		isBet:      	false,
+		isShowCards:   	false,
+		isSeeCards:   	false,
+		isPlaying:     	false,
+		BetScore:     	1,
+		BaseMultiple:   1,
+		maxid:   1,
+		roundScore:     0,
+		totalScore:     0,
+		Paixing:   	card.DouniuType_Meiniu,
+		PaixingMultiple:1,
 		playingCards:	card.NewPlayingCards(),
 		observers:	make([]PlayerObserver, 0),
 	}
@@ -49,6 +67,63 @@ func (player *Player) GetPosition() int32 {
 	return player.position
 }
 
+func (player *Player) GetTotalScore() int32 {
+	return player.totalScore
+}
+
+func (player *Player) AddTotalScore(add int32) int32 {
+	player.totalScore += add
+	return player.totalScore
+}
+
+func (player *Player) GetRoundScore() int32 {
+	return player.roundScore
+}
+
+func (player *Player) SetRoundScore(round_score int32) {
+	player.roundScore = round_score
+}
+
+func (player *Player) GetLeizhu() int32 {
+	return player.leizhu
+}
+
+func (player *Player) SetLeizhu(leizhu int32) {
+	player.leizhu = leizhu
+}
+
+func (player *Player) GetBaseMultiple() int32 {
+	return player.BaseMultiple
+}
+
+func (player *Player) SetBaseMultiple(multiple int32) {
+	player.BaseMultiple = multiple
+}
+
+func (player *Player) GetPaixingMultiple() int {
+	return player.PaixingMultiple
+}
+
+func (player *Player) SetPaixingMultiple(multiple int) {
+	player.PaixingMultiple = multiple
+}
+
+func (player *Player) GetPaixing() int {
+	return player.Paixing
+}
+
+func (player *Player) SetPaixing(paixing int) {
+	player.Paixing = paixing
+}
+
+func (player *Player) GetMaxid() int {
+	return player.maxid
+}
+
+func (player *Player) SetMaxid(maxid int) {
+	player.maxid = maxid
+}
+
 func (player *Player) GetIsBet() bool {
 	return player.isBet
 }
@@ -65,12 +140,28 @@ func (player *Player) SetBetScore(score int32) {
 	player.BetScore = score
 }
 
-func (player *Player) GetIsShow() bool {
-	return player.isShow
+func (player *Player) GetIsShowCards() bool {
+	return player.isShowCards
 }
 
-func (player *Player) SetIsShow(is_show bool) {
-	player.isShow = is_show
+func (player *Player) SetIsShowCards(is_showcards bool) {
+	player.isShowCards = is_showcards
+}
+
+func (player *Player) GetIsSeeCards() bool {
+	return player.isSeeCards
+}
+
+func (player *Player) SetIsSeeCards(is_seecards bool) {
+	player.isSeeCards = is_seecards
+}
+
+func (player *Player) GetIsPlaying() bool {
+	return player.isPlaying
+}
+
+func (player *Player) SetIsPlaying(is_playing bool) {
+	player.isPlaying = is_playing
 }
 
 func (player *Player) Reset() {
@@ -78,7 +169,9 @@ func (player *Player) Reset() {
 	player.playingCards.Reset()
 	player.SetIsReady(false)
 	player.SetIsBet(false)
-	player.SetIsShow(false)
+	player.SetIsShowCards(false)
+	player.SetIsSeeCards(false)
+	player.SetIsPlaying(false)
 }
 
 func (player *Player) AddObserver(ob PlayerObserver) {
@@ -115,6 +208,11 @@ func (player *Player) OperateDoReady() bool{
 	if player.room == nil {
 		return false
 	}
+	room_status := player.room.roomStatus
+	if room_status != RoomStatusWaitAllPlayerEnter && room_status != RoomStatusWaitAllPlayerReady {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
 
 	data := &OperateReadyRoomData{}
 	op := NewOperateReadyRoom(player, data)
@@ -125,6 +223,15 @@ func (player *Player) OperateDoReady() bool{
 func (player *Player) OperateBet(score int32) bool{
 	log.Debug(time.Now().Unix(), player, "OperateBet", player.room)
 	if player.room == nil {
+		return false
+	}
+	room_status := player.room.roomStatus
+	if room_status != RoomStatusPlayGame {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
+	if !player.GetIsPlaying() {
+		log.Error("Player is not playing", player)
 		return false
 	}
 
@@ -139,11 +246,41 @@ func (player *Player) OperateShowCards() bool{
 	if player.room == nil {
 		return false
 	}
+	room_status := player.room.roomStatus
+	if room_status != RoomStatusShowCards {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
+	if !player.GetIsPlaying() {
+		log.Error("Player is not playing", player)
+		return false
+	}
 
 	data := &OperateShowCardsData{}
 	op := NewOperateShowCards(player, data)
 	player.room.PlayerOperate(op)
 	return player.waitResult(op.ResultCh)
+}
+
+func (player *Player) OperateSeeCards() bool{
+	log.Debug(time.Now().Unix(), player, "OperateSeeCards", player.room)
+	if player.room == nil {
+		return false
+	}
+	room_status := player.room.roomStatus
+	if room_status != RoomStatusShowCards {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
+	if !player.GetIsPlaying() {
+		log.Error("Player is not playing", player)
+		return false
+	}
+
+	data := &OperateSeeCardsData{}
+	op := NewOperateSeeCards(player, data)
+	player.room.dealPlayerOperate(op)
+	return true
 }
 
 func (player *Player) GetIsReady() bool {
@@ -197,7 +334,19 @@ func (player *Player) Bet(score int32) {
 
 func (player *Player) ShowCards() {
 	log.Debug(time.Now().Unix(), player, "showcards", player.room)
-	player.SetIsShow(true)
+	player.SetIsShowCards(true)
+
+	paixing := card.GetPaixing(player.playingCards.CardsInHand.GetData())
+	maxid := card.GetCardsMaxid(player.playingCards.CardsInHand.GetData())
+	paixing_multiple := card.GetPaixingMultiple(paixing)
+	player.SetPaixing(paixing)
+	player.SetPaixingMultiple(paixing_multiple)
+	player.SetMaxid(maxid)
+}
+
+func (player *Player) SeeCards() {
+	log.Debug(time.Now().Unix(), player, "seecards", player.room)
+	player.SetIsSeeCards(true)
 }
 
 func (player *Player) String() string{
@@ -215,6 +364,12 @@ func (player *Player) OnPlayerSuccessOperated(op *Operate) {
 		player.onPlayerEnterRoom(op)
 	case OperateLeaveRoom:
 		player.onPlayerLeaveRoom(op)
+	case OperateReadyRoom:
+		player.onPlayerReadyRoom(op)
+	case OperateShowCards:
+		player.onShowCards(op)
+	case OperateSeeCards:
+		player.onSeeCards(op)
 	}
 }
 
@@ -240,6 +395,15 @@ func (player *Player) onPlayerEnterRoom(op *Operate) {
 	}
 }
 
+func (player *Player) onPlayerReadyRoom(op *Operate) {
+	log.Debug(time.Now().Unix(), player, "onPlayerReadyRoom")
+
+	data := &ReadyRoomMsgData{
+		ReadyPlayer:op.Operator,
+	}
+	player.notifyObserver(NewReadyRoomMsg(player, data))
+}
+
 func (player *Player) onPlayerLeaveRoom(op *Operate) {
 	if _, ok := op.Data.(*OperateLeaveRoomData); ok {
 		if op.Operator == player {
@@ -263,11 +427,31 @@ func (player *Player) OnAllBet() {
 	player.notifyObserver(NewBetMsg(player, data))
 }
 
-func (player *Player) OnAllShowCards() {
-	log.Debug(time.Now().Unix(), player, "OnAllShowCards")
+func (player *Player) OnJiesuan(msg *Message) {
+	log.Debug(time.Now().Unix(), player, "OnJiesuan")
 
-	data := &ShowCardsMsgData{}
-	player.notifyObserver(NewShowCardsMsg(player, data))
+	player.notifyObserver(msg)
+}
+
+func (player *Player) onShowCards(op *Operate) {
+	log.Debug(time.Now().Unix(), player, "onShowCards")
+	if show_data, ok := op.Data.(*OperateShowCardsData); ok {
+		data := &ShowCardsMsgData{
+			ShowPlayer:op.Operator,
+			Paixing:show_data.Paixing,
+			PaixingMultiple:show_data.PaixingMultiple,
+		}
+		player.notifyObserver(NewShowCardsMsg(player, data))
+	}
+}
+
+func (player *Player) onSeeCards(op *Operate) {
+	log.Debug(time.Now().Unix(), player, "onSeeCards")
+
+	data := &SeeCardsMsgData{
+		SeePlayer:op.Operator,
+	}
+	player.notifyObserver(NewSeeCardsMsg(player, data))
 }
 
 func (player *Player) OnGetInitCards() {
@@ -281,11 +465,19 @@ func (player *Player) OnGetInitCards() {
 
 func (player *Player) OnGetMaster() {
 	log.Debug(time.Now().Unix(), player, "OnGetMaster")
+	player.SetIsPlaying(true)
 
 	data := &GetMasterMsgData{}
 	data.Scores = make([]int32, 0)
-	data.Scores = append(data.Scores, player.room.GetScoreLow())
-	data.Scores = append(data.Scores, player.room.GetScoreHigh())
+	if player != player.room.masterPlayer {
+		data.Scores = append(data.Scores, player.room.GetScoreLow())
+		data.Scores = append(data.Scores, player.room.GetScoreHigh())
+		lastLeizhu := player.GetLeizhu()
+		if lastLeizhu > 0 {
+			data.Scores = append(data.Scores, lastLeizhu)
+		}
+	}
+
 	log.Debug(time.Now().Unix(), player, data.Scores)
 	player.notifyObserver(NewGetMasterMsg(player, data))
 }
@@ -301,7 +493,7 @@ func (player *Player) OnRoomClosed() {
 
 func (player *Player) OnEndPlayGame() {
 	log.Debug(time.Now().Unix(), player, "OnPlayingGameEnd")
-	//player.Reset()
+	player.Reset()
 	data := &GameEndMsgData{}
 	player.notifyObserver(NewGameEndMsg(player, data))
 }

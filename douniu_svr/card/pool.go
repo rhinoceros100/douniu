@@ -50,25 +50,6 @@ func (pool *Pool) generate() {
 			pool.cards.AppendCard(card_hei)
 		}
 	}
-
-	for num := 0; num < 1; num ++ {
-		card_xiao := &Card{
-			CardType_Xiaowang,
-			14,
-			0,
-		}
-		card_xiao.CardId = card_xiao.MakeID(num)
-
-		card_da := &Card{
-			CardType_Dawang,
-			14,
-			0,
-		}
-		card_da.CardId = card_da.MakeID(num)
-
-		pool.cards.AppendCard(card_xiao)
-		pool.cards.AppendCard(card_da)
-	}
 }
 
 func (pool *Pool) ReGenerate() {
