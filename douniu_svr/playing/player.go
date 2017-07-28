@@ -16,6 +16,7 @@ type Player struct {
 	position		int32			//玩家在房间的位置
 	room			*Room			//玩家所在的房间
 	isReady			bool
+	isScramble		bool
 	isBet			bool
 	isShowCards		bool
 	isSeeCards		bool
@@ -38,6 +39,7 @@ func NewPlayer(id uint64) *Player {
 		id:		id,
 		position:       10,
 		isReady:        false,
+		isScramble:     false,
 		isBet:      	false,
 		isShowCards:   	false,
 		isSeeCards:   	false,
@@ -90,6 +92,14 @@ func (player *Player) GetLeizhu() int32 {
 
 func (player *Player) SetLeizhu(leizhu int32) {
 	player.leizhu = leizhu
+}
+
+func (player *Player) GetIsScramble() bool {
+	return player.isScramble
+}
+
+func (player *Player) SetIsScramble(is_scramble bool) {
+	player.isScramble = is_scramble
 }
 
 func (player *Player) GetBaseMultiple() int32 {
@@ -165,10 +175,11 @@ func (player *Player) SetIsPlaying(is_playing bool) {
 }
 
 func (player *Player) Reset() {
-	log.Debug(time.Now().Unix(), player,"Player.Reset")
+	//log.Debug(time.Now().Unix(), player,"Player.Reset")
 	player.playingCards.Reset()
 	player.SetIsReady(false)
 	player.SetIsBet(false)
+	player.SetIsScramble(false)
 	player.SetIsShowCards(false)
 	player.SetIsSeeCards(false)
 	player.SetIsPlaying(false)
@@ -179,12 +190,19 @@ func (player *Player) AddObserver(ob PlayerObserver) {
 }
 
 func (player *Player) AddCard(card *card.Card) {
-	log.Debug(time.Now().Unix(), player, "Player.AddCard :", card)
+	//log.Debug(time.Now().Unix(), player, "Player.AddCard :", card)
 	player.playingCards.AddCard(card)
 }
 
 func (player *Player) OperateEnterRoom(room *Room) bool{
-	log.Debug(time.Now().Unix(), player, "OperateEnterRoom room :", room)
+	//log.Debug(time.Now().Unix(), player, "OperateEnterRoom room :", room)
+	for _, room_player := range room.players{
+		if room_player == player{
+			log.Error("Player already in room:", player)
+			return false
+		}
+	}
+
 	data := &OperateEnterRoomData{}
 	op := NewOperateEnterRoom(player, data)
 	room.PlayerOperate(op)
@@ -192,7 +210,7 @@ func (player *Player) OperateEnterRoom(room *Room) bool{
 }
 
 func (player *Player) OperateLeaveRoom() bool{
-	log.Debug(time.Now().Unix(), player, "OperateLeaveRoom", player.room)
+	//log.Debug(time.Now().Unix(), player, "OperateLeaveRoom", player.room)
 	if player.room == nil {
 		return true
 	}
@@ -204,8 +222,8 @@ func (player *Player) OperateLeaveRoom() bool{
 }
 
 func (player *Player) OperateDoReady() bool{
-	log.Debug(time.Now().Unix(), player, "OperateDoReady", player.room)
-	if player.room == nil {
+	//log.Debug(time.Now().Unix(), player, "OperateDoReady", player.room)
+	if player.room == nil || player.GetIsReady(){
 		return false
 	}
 	room_status := player.room.roomStatus
@@ -220,9 +238,30 @@ func (player *Player) OperateDoReady() bool{
 	return player.waitResult(op.ResultCh)
 }
 
+func (player *Player) OperateScramble(scramble_multiple int32) bool{
+	log.Debug(time.Now().Unix(), player, "OperateScramble", player.room)
+	if player.room == nil || player.GetIsScramble(){
+		return false
+	}
+	room_status := player.room.roomStatus
+	if room_status != RoomStatusGetMaster {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
+	if !player.GetIsPlaying() {
+		log.Error("Player is not playing", player)
+		return false
+	}
+
+	data := &OperateScrambleData{ScrambleMultiple:scramble_multiple}
+	op := NewOperateScramble(player, data)
+	player.room.PlayerOperate(op)
+	return player.waitResult(op.ResultCh)
+}
+
 func (player *Player) OperateBet(score int32) bool{
 	log.Debug(time.Now().Unix(), player, "OperateBet", player.room)
-	if player.room == nil {
+	if player.room == nil  || player.GetIsBet(){
 		return false
 	}
 	room_status := player.room.roomStatus
@@ -332,8 +371,14 @@ func (player *Player) Bet(score int32) {
 	player.SetIsBet(true)
 }
 
+func (player *Player) Scramble(multiple int32) {
+	log.Debug(time.Now().Unix(), player, "Scramble", player.room)
+	player.SetBaseMultiple(multiple)
+	player.SetIsScramble(true)
+}
+
 func (player *Player) ShowCards() {
-	log.Debug(time.Now().Unix(), player, "showcards", player.room)
+	//log.Debug(time.Now().Unix(), player, "showcards", player.room)
 	player.SetIsShowCards(true)
 
 	paixing := card.GetPaixing(player.playingCards.CardsInHand.GetData())
@@ -358,7 +403,7 @@ func (player *Player) String() string{
 
 //玩家成功操作的通知
 func (player *Player) OnPlayerSuccessOperated(op *Operate) {
-	log.Debug(time.Now().Unix(), player, "OnPlayerSuccessOperated", op)
+	//log.Debug(time.Now().Unix(), player, "OnPlayerSuccessOperated", op)
 	switch op.Op {
 	case OperateEnterRoom:
 		player.onPlayerEnterRoom(op)
@@ -374,7 +419,7 @@ func (player *Player) OnPlayerSuccessOperated(op *Operate) {
 }
 
 func (player *Player) notifyObserver(msg *Message) {
-	log.Debug(time.Now().Unix(), player, "notifyObserverMsg", msg)
+	//log.Debug(time.Now().Unix(), player, "notifyObserverMsg", msg)
 	for _, ob := range player.observers {
 		ob.OnMsg(player, msg)
 	}
@@ -396,7 +441,7 @@ func (player *Player) onPlayerEnterRoom(op *Operate) {
 }
 
 func (player *Player) onPlayerReadyRoom(op *Operate) {
-	log.Debug(time.Now().Unix(), player, "onPlayerReadyRoom")
+	//log.Debug(time.Now().Unix(), player, "onPlayerReadyRoom")
 
 	data := &ReadyRoomMsgData{
 		ReadyPlayer:op.Operator,
@@ -421,20 +466,20 @@ func (player *Player) onPlayerLeaveRoom(op *Operate) {
 }
 
 func (player *Player) OnAllBet() {
-	log.Debug(time.Now().Unix(), player, "OnAllBet")
+	//log.Debug(time.Now().Unix(), player, "OnAllBet")
 
 	data := &BetMsgData{}
 	player.notifyObserver(NewBetMsg(player, data))
 }
 
 func (player *Player) OnJiesuan(msg *Message) {
-	log.Debug(time.Now().Unix(), player, "OnJiesuan")
+	//log.Debug(time.Now().Unix(), player, "OnJiesuan")
 
 	player.notifyObserver(msg)
 }
 
 func (player *Player) onShowCards(op *Operate) {
-	log.Debug(time.Now().Unix(), player, "onShowCards")
+	//log.Debug(time.Now().Unix(), player, "onShowCards")
 	if show_data, ok := op.Data.(*OperateShowCardsData); ok {
 		data := &ShowCardsMsgData{
 			ShowPlayer:op.Operator,
@@ -446,7 +491,7 @@ func (player *Player) onShowCards(op *Operate) {
 }
 
 func (player *Player) onSeeCards(op *Operate) {
-	log.Debug(time.Now().Unix(), player, "onSeeCards")
+	//log.Debug(time.Now().Unix(), player, "onSeeCards")
 
 	data := &SeeCardsMsgData{
 		SeePlayer:op.Operator,
@@ -455,7 +500,7 @@ func (player *Player) onSeeCards(op *Operate) {
 }
 
 func (player *Player) OnGetInitCards() {
-	log.Debug(time.Now().Unix(), player, "OnGetInitCards", player.playingCards)
+	//log.Debug(time.Now().Unix(), player, "OnGetInitCards", player.playingCards)
 
 	data := &GetInitCardsMsgData{
 		PlayingCards: player.playingCards,
@@ -463,11 +508,23 @@ func (player *Player) OnGetInitCards() {
 	player.notifyObserver(NewGetInitCardsMsg(player, data))
 }
 
-func (player *Player) OnGetMaster() {
-	log.Debug(time.Now().Unix(), player, "OnGetMaster")
-	player.SetIsPlaying(true)
+func (player *Player) OnGetDispatchedCard(dispatched_card *card.Card) {
+	//log.Debug(time.Now().Unix(), player, "OnGetDispatchedCard", dispatched_card)
 
-	data := &GetMasterMsgData{}
+	data := &DispatchCardMsgData{
+		DispatchedCard: dispatched_card,
+	}
+	player.notifyObserver(NewDispatchCardMsg(player, data))
+}
+
+func (player *Player) OnGetMaster(highest_players []*Player, master_player *Player) {
+	//log.Debug(time.Now().Unix(), player, "OnGetMaster")
+	//player.SetIsPlaying(true)
+
+	data := &GetMasterMsgData{
+		MasterPlayer:master_player,
+		HighestPlayers:highest_players,
+	}
 	data.Scores = make([]int32, 0)
 	if player != player.room.masterPlayer {
 		data.Scores = append(data.Scores, player.room.GetScoreLow())
@@ -478,12 +535,12 @@ func (player *Player) OnGetMaster() {
 		}
 	}
 
-	log.Debug(time.Now().Unix(), player, data.Scores)
+	//log.Debug(time.Now().Unix(), player, data.Scores)
 	player.notifyObserver(NewGetMasterMsg(player, data))
 }
 
 func (player *Player) OnRoomClosed() {
-	log.Debug(time.Now().Unix(), player, "OnRoomClosed")
+	//log.Debug(time.Now().Unix(), player, "OnRoomClosed")
 	player.room = nil
 	//player.Reset()
 
@@ -492,7 +549,7 @@ func (player *Player) OnRoomClosed() {
 }
 
 func (player *Player) OnEndPlayGame() {
-	log.Debug(time.Now().Unix(), player, "OnPlayingGameEnd")
+	//log.Debug(time.Now().Unix(), player, "OnPlayingGameEnd")
 	player.Reset()
 	data := &GameEndMsgData{}
 	player.notifyObserver(NewGameEndMsg(player, data))

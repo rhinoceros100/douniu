@@ -6,7 +6,7 @@ import (
 
 type GameType int
 const (
-	GameTypeNiuniu	GameType = iota			//牛牛上庄
+	GameTypeNiuniu	GameType = iota + 1		//牛牛上庄
 	GameTypeLunliu					//轮流上庄
 	GameTypeMingpai					//明牌上庄
 )
@@ -22,6 +22,7 @@ type RoomConfig struct {
 	ScoreLow			int        `json:"score_low"`	//下注底分
 	ScoreHigh			int        `json:"score_high"`	//下注高分
 
+	WaitScrambleSec                	time.Duration      `json:"wait_scramble_sec"`	//等待抢庄时长
 	WaitBetSec                 	time.Duration      `json:"wait_bet_sec"`	//等待下注时长
 	WaitShowCardsSec              	time.Duration      `json:"wait_show_cards_sec"`	//等待亮牌时长
 	WaitReadySec              	time.Duration      `json:"wait_ready_sec"`	//等待准备时长
@@ -45,6 +46,7 @@ func (config *RoomConfig) Init(score_low, score_high int, play_game_type GameTyp
 	config.WaitPlayerOperateTimeout = 300
 	config.MaxPlayGameCnt = 3
 
+	config.WaitScrambleSec = 10
 	config.WaitBetSec = 15
 	config.WaitShowCardsSec = 15
 	config.WaitReadySec = 15

@@ -2,7 +2,8 @@ package card
 
 import "fmt"
 
-const NIUNIU_INIT_CARD_NUM int = 5      //牛牛起手牌数
+const NIUNIU_INIT_CARD_NUM int = 5      //牛牛/轮流起手牌数
+const MINGPAI_INIT_CARD_NUM int = 4     //明牌起手牌数
 
 type PlayingCards struct {
 	CardsInHand			*Cards		//手上的牌

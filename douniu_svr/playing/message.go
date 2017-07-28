@@ -10,6 +10,7 @@ const  (
 	MsgGetInitCards	MsgType = iota + 1
 	MsgGetMaster
 	MsgBet
+	MsgDispatchCard
 	MsgShowCards
 	MsgSeeCards
 	MsgJiesuan
@@ -27,6 +28,8 @@ func (msgType MsgType) String() string {
 		return "MsgGetInitCards"
 	case MsgGetMaster:
 		return "MsgGetMaster"
+	case MsgDispatchCard:
+		return "MsgDispatchCard"
 	case MsgBet:
 		return "MsgBet"
 	case MsgShowCards:
@@ -73,6 +76,8 @@ func newMsg(t MsgType, owner *Player, data interface{}) *Message {
 //玩家获得初始牌的消息
 type GetMasterMsgData struct {
 	Scores   []int32
+	HighestPlayers []*Player
+	MasterPlayer *Player
 }
 func NewGetMasterMsg(owner *Player, data *GetMasterMsgData) *Message {
 	return newMsg(MsgGetMaster, owner, data)
@@ -84,6 +89,14 @@ type GetInitCardsMsgData struct {
 }
 func NewGetInitCardsMsg(owner *Player, data *GetInitCardsMsgData) *Message {
 	return newMsg(MsgGetInitCards, owner, data)
+}
+
+//玩家获得牌的消息
+type DispatchCardMsgData struct {
+	DispatchedCard *card.Card
+}
+func NewDispatchCardMsg(owner *Player, data *DispatchCardMsgData) *Message {
+	return newMsg(MsgDispatchCard, owner, data)
 }
 
 //玩家下注的消息

@@ -9,6 +9,7 @@ const (
 	OperateReadyRoom
 	OperateLeaveRoom
 
+	OperateScramble
 	OperateBet
 	OperateShowCards
 	OperateSeeCards
@@ -22,6 +23,8 @@ func (operateType OperateType) String() string {
 		return "OperateReadyRoom"
 	case OperateLeaveRoom:
 		return "OperateLeaveRoom"
+	case OperateScramble:
+		return "OperateScramble"
 	case OperateBet:
 		return "OperateBet"
 	case OperateShowCards:
@@ -71,6 +74,13 @@ type OperateLeaveRoomData struct {
 }
 func NewOperateLeaveRoom(operator *Player, data *OperateLeaveRoomData) *Operate {
 	return newOperate(OperateLeaveRoom, operator, data)
+}
+
+type OperateScrambleData struct {
+	ScrambleMultiple int32
+}
+func NewOperateScramble(operator *Player, data *OperateScrambleData) *Operate {
+	return newOperate(OperateScramble, operator, data)
 }
 
 type OperateBetData struct {

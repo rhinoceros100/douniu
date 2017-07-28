@@ -100,8 +100,9 @@ func GetPaixingMultiple(paixing int) int {
 		return 6
 	case DouniuType_Wuxiao:
 		return 7
+	default:
+		return 1
 	}
-	return 1
 }
 
 func GetCardsMaxid(hand_cards []*Card) int {
