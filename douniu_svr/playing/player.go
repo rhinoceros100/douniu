@@ -214,6 +214,11 @@ func (player *Player) OperateLeaveRoom() bool{
 	if player.room == nil {
 		return true
 	}
+	room_status := player.room.roomStatus
+	if room_status > RoomStatusWaitAllPlayerEnter {
+		log.Error("Wrong room status:", room_status)
+		return false
+	}
 
 	data := &OperateLeaveRoomData{}
 	op := NewOperateLeaveRoom(player, data)

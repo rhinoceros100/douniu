@@ -118,6 +118,7 @@ func NewShowCardsMsg(owner *Player, data *ShowCardsMsgData) *Message {
 type PlayerJiesuanData struct {
 	P *Player
 	Score int32
+	BetScore int
 	Paixing int
 	PaixingMultiple int
 	BaseMultiple int

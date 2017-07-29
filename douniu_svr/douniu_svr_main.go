@@ -16,9 +16,9 @@ func help() {
 	log.Debug("h")
 	log.Debug("exit")
 	log.Debug("mycards")
-	log.Debug(playing.OperateEnterRoom, int(playing.OperateEnterRoom))
-	log.Debug(playing.OperateReadyRoom, int(playing.OperateReadyRoom))
-	log.Debug(playing.OperateLeaveRoom, int(playing.OperateLeaveRoom))
+	log.Debug(playing.OperateEnterRoom, int(playing.OperateEnterRoom), "1(player_num)")
+	log.Debug(playing.OperateReadyRoom, int(playing.OperateReadyRoom), "1(player_num)")
+	log.Debug(playing.OperateLeaveRoom, int(playing.OperateLeaveRoom), "1(player_num)")
 	log.Debug(playing.OperateScramble, int(playing.OperateScramble), "4(multiple)")
 	log.Debug(playing.OperateBet, int(playing.OperateBet), "1(score)")
 	log.Debug(playing.OperateShowCards, int(playing.OperateShowCards))
@@ -50,7 +50,6 @@ func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 		if _, ok := msg.Data.(*playing.RoomClosedMsgData); ok {
 			log.Debug(log_time, player, "OnMsg MsgRoomClosed")
 		}
-
 	case playing.MsgGetInitCards:
 		if init_data, ok := msg.Data.(*playing.GetInitCardsMsgData); ok {
 			log.Debug(log_time, player, "OnMsg MsgGetInitCards, PlayingCards:", init_data.PlayingCards)
@@ -79,7 +78,8 @@ func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 		if jiesuan_data, ok := msg.Data.(*playing.JiesuanMsgData); ok {
 			log.Debug(log_time, player, "OnMsg MsgJiesuan, jiesuan_data:")
 			for _, score_data := range jiesuan_data.Scores	{
-				log.Debug(score_data.P, score_data.P.IsMaster(), score_data.Score, score_data.Paixing, score_data.PaixingMultiple, score_data.BaseMultiple)
+				log.Debug(score_data.P, score_data.P.IsMaster(), "Score:", score_data.Score, score_data.Paixing,
+					score_data.PaixingMultiple, score_data.BetScore, score_data.BaseMultiple)
 			}
 		}
 	}
@@ -90,7 +90,7 @@ func main() {
 
 	//init room
 	conf := playing.NewRoomConfig()
-	conf.Init(1, 2, playing.GameTypeLunliu)
+	conf.Init(1, 2, playing.GameTypeNiuniu)
 	room := playing.NewRoom(util.UniqueId(), conf)
 	room.Start()
 
@@ -135,11 +135,38 @@ func main() {
 		c, _ := strconv.Atoi(splits[0])
 		switch playing.OperateType(c) {
 		case playing.OperateEnterRoom:
-			curPlayer.OperateEnterRoom(room)
+			if len(splits) == 1 {
+				curPlayer.OperateEnterRoom(room)
+			}else{
+				player_num, _ := strconv.Atoi(splits[1])
+				if player_num == 1 {
+					curPlayer.OperateEnterRoom(room)
+				}else{
+					curPlayer2.OperateEnterRoom(room)
+				}
+			}
 		case playing.OperateReadyRoom:
-			curPlayer.OperateDoReady()
+			if len(splits) == 1 {
+				curPlayer.OperateDoReady()
+			}else{
+				player_num, _ := strconv.Atoi(splits[1])
+				if player_num == 1 {
+					curPlayer.OperateDoReady()
+				}else{
+					curPlayer2.OperateDoReady()
+				}
+			}
 		case playing.OperateLeaveRoom:
-			curPlayer.OperateLeaveRoom()
+			if len(splits) == 1 {
+				curPlayer.OperateLeaveRoom()
+			}else{
+				player_num, _ := strconv.Atoi(splits[1])
+				if player_num == 1 {
+					curPlayer.OperateLeaveRoom()
+				}else{
+					curPlayer2.OperateLeaveRoom()
+				}
+			}
 		case playing.OperateBet:
 			score, _ := strconv.Atoi(splits[1])
 			curPlayer.OperateBet(int32(score))

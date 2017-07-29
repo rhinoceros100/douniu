@@ -60,7 +60,7 @@ type Room struct {
 	//end playingGameData, reset when start playing game
 
 	roomOperateCh		chan *Operate
-	roomReadyCh		chan *Operate
+	roomReadyCh	[]chan *Operate
 	ScrambleCh	[]chan *Operate				//抢庄
 	BetCh		[]chan *Operate				//下注
 	ShowCardsCh	[]chan *Operate				//亮牌
@@ -79,12 +79,14 @@ func NewRoom(id uint64, config *RoomConfig) *Room {
 		playedGameCnt:	0,
 
 		roomOperateCh: make(chan *Operate, 1024),
-		roomReadyCh: make(chan *Operate, 1024),
+		//roomReadyCh: make(chan *Operate, 1024),
+		roomReadyCh: make([]chan *Operate, config.MaxPlayerNum),
 		ScrambleCh: make([]chan *Operate, config.MaxPlayerNum),
 		BetCh: make([]chan *Operate, config.MaxPlayerNum),
 		ShowCardsCh: make([]chan *Operate, config.MaxPlayerNum),
 	}
 	for idx := 0; idx < config.MaxPlayerNum; idx ++ {
+		room.roomReadyCh[idx] = make(chan *Operate, 1)
 		room.ScrambleCh[idx] = make(chan *Operate, 1)
 		room.BetCh[idx] = make(chan *Operate, 1)
 		room.ShowCardsCh[idx] = make(chan *Operate, 1)
@@ -104,7 +106,11 @@ func (room *Room) PlayerOperate(op *Operate) {
 	case OperateEnterRoom, OperateLeaveRoom:
 		room.roomOperateCh <- op
 	case OperateReadyRoom:
-		room.roomReadyCh <- op
+		if room.roomStatus == RoomStatusWaitAllPlayerEnter {
+			room.roomOperateCh <- op
+		}else {
+			room.roomReadyCh[pos] <- op
+		}
 	case OperateScramble:
 		room.ScrambleCh[pos] <- op
 	case OperateBet:
@@ -198,10 +204,12 @@ func (room *Room) waitAllPlayerEnter() {
 			room.switchStatus(RoomStatusRoomEnd) //超时发现没有足够的玩家都进入房间了，则结束
 			return
 		case op := <-room.roomOperateCh:
-			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom{
+			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom || op.Op == OperateReadyRoom {
 				log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
 				room.dealPlayerOperate(op)
-				go room.waitInitPlayerReady(op.Operator)
+				if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom {
+					go room.waitInitPlayerReady(op.Operator)
+				}
 
 				if room.isEnterPlayerEnough() && room.isAllPlayerReady() && room.roomStatus == RoomStatusWaitAllPlayerEnter{
 					room.switchStatus(RoomStatusGetMaster)
@@ -209,14 +217,14 @@ func (room *Room) waitAllPlayerEnter() {
 					return
 				}
 			}
-		case op := <-room.roomReadyCh:
+		/*case op := <-room.roomReadyCh:
 			log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
 			room.dealPlayerOperate(op)
 			if room.isEnterPlayerEnough() && room.isAllPlayerReady() && room.roomStatus == RoomStatusWaitAllPlayerEnter{
 				room.switchStatus(RoomStatusGetMaster)
 				go room.waitPlayerJoin()
 				return
-			}
+			}*/
 		}
 	}
 }
@@ -319,8 +327,8 @@ func (room *Room) waitPlayerReady(player *Player) bool {
 			log.Debug(time.Now().Unix(), player, "waitPlayerReady do PlayerOperate")
 			room.PlayerOperate(op)
 			continue
-		case op := <-room.roomReadyCh:
-			log.Debug(time.Now().Unix(), op.Operator, "Player.waitPlayerReady")
+		case op := <-room.roomReadyCh[player.position]:
+			log.Debug(time.Now().Unix(), player, "Player.waitPlayerReady")
 			room.dealPlayerOperate(op)
 			return true
 		}
@@ -529,10 +537,12 @@ func (room *Room) jiesuan() *Message {
 	if master_base_multiple == 0 {
 		master_base_multiple = 1
 	}
+	master_bet_score := master_player.GetBetScore()
 	master_maxid := master_player.GetMaxid()
 	master_jiesuan_data := &PlayerJiesuanData{
 		P:master_player,
 		Score:0,
+		BetScore:int(master_bet_score),
 		Paixing:master_paixing,
 		PaixingMultiple:master_paixing_multiple,
 		BaseMultiple:int(master_base_multiple),
@@ -553,16 +563,17 @@ func (room *Room) jiesuan() *Message {
 				player_base_multiple = 1
 			}
 			player_bet_score := player.GetBetScore()
-			round_score := player_bet_score * player_base_multiple * int32(player_paixing_multiple)
 			player_jiesuan_data := &PlayerJiesuanData{
 				P:player,
 				Score:0,
+				BetScore:int(player_bet_score),
 				Paixing:player_paixing,
 				PaixingMultiple:player_paixing_multiple,
 				BaseMultiple:int(player_base_multiple),
 			}
 
 			if player_paixing > master_paixing || (player_paixing == master_paixing && player_maxid > master_maxid){
+				round_score := player_bet_score * player_base_multiple * int32(player_paixing_multiple)
 				player.SetRoundScore(round_score)
 				player.AddTotalScore(round_score)
 				player_jiesuan_data.Score = round_score
@@ -592,6 +603,7 @@ func (room *Room) jiesuan() *Message {
 				}
 
 			}else{
+				round_score := player_bet_score * player_base_multiple * int32(master_paixing_multiple)
 				player.SetRoundScore(-round_score)
 				player.AddTotalScore(-round_score)
 				player_jiesuan_data.Score = -round_score
