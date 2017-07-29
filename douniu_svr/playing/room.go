@@ -749,6 +749,8 @@ func (room *Room) dealPlayerOperate(op *Operate) bool{
 			op.ResultCh <- true
 			show_data.Paixing = op.Operator.GetPaixing()
 			show_data.PaixingMultiple = op.Operator.GetPaixingMultiple()
+			show_data.PlayingCards = op.Operator.playingCards
+			show_data.NiuCards = op.Operator.GetNiuCards()
 			room.broadcastPlayerSuccessOperated(op)
 			return true
 		}

@@ -1,6 +1,9 @@
 package playing
 
-import "fmt"
+import (
+	"fmt"
+	"douniu/douniu_svr/card"
+)
 
 type OperateType int
 
@@ -93,6 +96,8 @@ func NewOperateBet(operator *Player, data *OperateBetData) *Operate {
 type OperateShowCardsData struct {
 	Paixing int
 	PaixingMultiple int
+	PlayingCards	*card.PlayingCards
+	NiuCards	[]*card.Card
 }
 func NewOperateShowCards(operator *Player, data *OperateShowCardsData) *Operate {
 	return newOperate(OperateShowCards, operator, data)

@@ -31,6 +31,7 @@ type Player struct {
 	leizhu		        int32                   //垒注
 
 	playingCards 	*card.PlayingCards	//玩家手上的牌
+	niuCards         []*card.Card
 	observers	 []PlayerObserver
 }
 
@@ -53,6 +54,7 @@ func NewPlayer(id uint64) *Player {
 		PaixingMultiple:1,
 		playingCards:	card.NewPlayingCards(),
 		observers:	make([]PlayerObserver, 0),
+		niuCards:       make([]*card.Card, 0),
 	}
 	return player
 }
@@ -172,6 +174,14 @@ func (player *Player) GetIsPlaying() bool {
 
 func (player *Player) SetIsPlaying(is_playing bool) {
 	player.isPlaying = is_playing
+}
+
+func (player *Player) GetNiuCards() []*card.Card {
+	return player.niuCards
+}
+
+func (player *Player) SetNiuCards(niu_cards []*card.Card) {
+	player.niuCards = niu_cards
 }
 
 func (player *Player) Reset() {
@@ -386,12 +396,13 @@ func (player *Player) ShowCards() {
 	//log.Debug(time.Now().Unix(), player, "showcards", player.room)
 	player.SetIsShowCards(true)
 
-	paixing := card.GetPaixing(player.playingCards.CardsInHand.GetData())
+	paixing, niu_cards := card.GetPaixing(player.playingCards.CardsInHand.GetData())
 	maxid := card.GetCardsMaxid(player.playingCards.CardsInHand.GetData())
 	paixing_multiple := card.GetPaixingMultiple(paixing)
 	player.SetPaixing(paixing)
 	player.SetPaixingMultiple(paixing_multiple)
 	player.SetMaxid(maxid)
+	player.SetNiuCards(niu_cards)
 }
 
 func (player *Player) SeeCards() {
@@ -490,6 +501,8 @@ func (player *Player) onShowCards(op *Operate) {
 			ShowPlayer:op.Operator,
 			Paixing:show_data.Paixing,
 			PaixingMultiple:show_data.PaixingMultiple,
+			PlayingCards:show_data.PlayingCards,
+			NiuCards:show_data.NiuCards,
 		}
 		player.notifyObserver(NewShowCardsMsg(player, data))
 	}

@@ -1,14 +1,16 @@
 package card
 
-func GetPaixing(hand_cards []*Card) int {
+func GetPaixing(hand_cards []*Card) (paixing int, niu_cards []*Card) {
+	niu_cards = make([]*Card, 0)
 	if len(hand_cards) != 5 {
-		return DouniuType_Meiniu
+		return DouniuType_Meiniu, niu_cards
 	}
 
 	//检查是否有特殊牌型
 	huapai_num := 0
 	total_score := 0
 	same_card_num := 0
+	var same_card *Card
 	for i := 0; i < 5; i++ {
 		if hand_cards[i].CardNo > 10 {
 			huapai_num ++
@@ -18,18 +20,30 @@ func GetPaixing(hand_cards []*Card) int {
 	for i := 0; i < 4; i++ {
 		for j := i + 1; j < 5; j++ {
 			if hand_cards[i].SameCardNoAs(hand_cards[j]) {
+				same_card = hand_cards[i]
 				same_card_num++
 			}
 		}
 	}
 	if total_score <= 10 {
-		return DouniuType_Wuxiao
+		for _, hand_card := range hand_cards {
+			niu_cards = append(niu_cards, hand_card)
+		}
+		return DouniuType_Wuxiao, niu_cards
 	}
 	if same_card_num == 6 {
-		return DouniuType_Zhadan
+		for _, hand_card := range hand_cards {
+			if hand_card.SameCardNoAs(same_card) {
+				niu_cards = append(niu_cards, hand_card)
+			}
+		}
+		return DouniuType_Zhadan, niu_cards
 	}
 	if huapai_num == 5 {
-		return DouniuType_Wuhua
+		for _, hand_card := range hand_cards {
+			niu_cards = append(niu_cards, hand_card)
+		}
+		return DouniuType_Wuhua, niu_cards
 	}
 
 	//检查常规牌型
@@ -43,13 +57,16 @@ func GetPaixing(hand_cards []*Card) int {
 				three_cards_score := cardi_score + cardj_score + cardk_score
 				if three_cards_score % 10 == 0 {
 					left_score = total_score - three_cards_score
-					return GetLeftScorePaixing(left_score)
+					niu_cards = append(niu_cards, hand_cards[i])
+					niu_cards = append(niu_cards, hand_cards[j])
+					niu_cards = append(niu_cards, hand_cards[k])
+					return GetLeftScorePaixing(left_score), niu_cards
 				}
 			}
 		}
 	}
 
-	return DouniuType_Meiniu
+	return DouniuType_Meiniu, niu_cards
 }
 
 func GetLeftScorePaixing(score int) int {

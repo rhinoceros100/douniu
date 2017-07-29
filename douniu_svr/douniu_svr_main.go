@@ -55,8 +55,9 @@ func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 			log.Debug(log_time, player, "OnMsg MsgGetInitCards, PlayingCards:", init_data.PlayingCards)
 		}
 	case playing.MsgGetMaster:
-		if init_data, ok := msg.Data.(*playing.GetMasterMsgData); ok {
-			log.Debug(log_time, player, "OnMsg MsgGetMaster, Scores:", init_data.Scores)
+		if master_data, ok := msg.Data.(*playing.GetMasterMsgData); ok {
+			log.Debug(log_time, player, "OnMsg MsgGetMaster, Scores:", master_data.Scores, "MasterPlayer:",
+				master_data.MasterPlayer, "HighestPlayers:", master_data.HighestPlayers)
 		}
 	case playing.MsgBet:
 		if _, ok := msg.Data.(*playing.BetMsgData); ok {
@@ -72,7 +73,8 @@ func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 		}
 	case playing.MsgShowCards:
 		if show_data, ok := msg.Data.(*playing.ShowCardsMsgData); ok {
-			log.Debug(log_time, player, "OnMsg MsgShowCards, ShowPlayer:", show_data.ShowPlayer, show_data.Paixing, show_data.PaixingMultiple)
+			log.Debug(log_time, player, "OnMsg ShowCards:", show_data.ShowPlayer, show_data.Paixing,
+				show_data.PaixingMultiple, show_data.PlayingCards, show_data.NiuCards)
 		}
 	case playing.MsgJiesuan:
 		if jiesuan_data, ok := msg.Data.(*playing.JiesuanMsgData); ok {
@@ -90,7 +92,7 @@ func main() {
 
 	//init room
 	conf := playing.NewRoomConfig()
-	conf.Init(1, 2, playing.GameTypeNiuniu)
+	conf.Init(1, 2, playing.GameTypeLunliu)
 	room := playing.NewRoom(util.UniqueId(), conf)
 	room.Start()
 

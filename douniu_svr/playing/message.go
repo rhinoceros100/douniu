@@ -110,6 +110,8 @@ type ShowCardsMsgData struct {
 	ShowPlayer *Player
 	Paixing int
 	PaixingMultiple int
+	PlayingCards	*card.PlayingCards
+	NiuCards	[]*card.Card
 }
 func NewShowCardsMsg(owner *Player, data *ShowCardsMsgData) *Message {
 	return newMsg(MsgShowCards, owner, data)
