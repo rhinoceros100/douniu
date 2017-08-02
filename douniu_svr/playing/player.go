@@ -267,6 +267,10 @@ func (player *Player) OperateScramble(scramble_multiple int32) bool{
 		log.Error("Player is not playing", player)
 		return false
 	}
+	if scramble_multiple < 0 || scramble_multiple > 4 {
+		log.Error("Player is not playing", player)
+		return false
+	}
 
 	data := &OperateScrambleData{ScrambleMultiple:scramble_multiple}
 	op := NewOperateScramble(player, data)
@@ -286,6 +290,15 @@ func (player *Player) OperateBet(score int32) bool{
 	}
 	if !player.GetIsPlaying() {
 		log.Error("Player is not playing", player)
+		return false
+	}
+	if player.IsMaster() {
+		log.Error("Player is master", player)
+		return false
+	}
+	leizhu := player.GetLeizhu()
+	if score <= 0 || (leizhu > 0 && score > leizhu) || (leizhu == 0 && score > player.room.GetScoreHigh()){
+		log.Error("score err:", score, ", leizhu:", leizhu, ", score_hith:", player.room.GetScoreHigh())
 		return false
 	}
 
@@ -427,6 +440,10 @@ func (player *Player) OnPlayerSuccessOperated(op *Operate) {
 		player.onPlayerLeaveRoom(op)
 	case OperateReadyRoom:
 		player.onPlayerReadyRoom(op)
+	case OperateScramble:
+		player.OnPlayerScramble(op)
+	case OperateBet:
+		player.OnPlayerBet(op)
 	case OperateShowCards:
 		player.onShowCards(op)
 	case OperateSeeCards:
@@ -481,11 +498,26 @@ func (player *Player) onPlayerLeaveRoom(op *Operate) {
 	}
 }
 
-func (player *Player) OnAllBet() {
-	//log.Debug(time.Now().Unix(), player, "OnAllBet")
+func (player *Player) OnPlayerScramble(op *Operate) {
+	//log.Debug(time.Now().Unix(), player, "OnPlayerScramble")
+	if scramble_data, ok := op.Data.(*OperateScrambleData); ok {
+		data := &ScrambleMsgData{
+			ScramblePlayer:op.Operator,
+			ScrambleMultiple:scramble_data.ScrambleMultiple,
+		}
+		player.notifyObserver(NewScrambleMsg(player, data))
+	}
+}
 
-	data := &BetMsgData{}
-	player.notifyObserver(NewBetMsg(player, data))
+func (player *Player) OnPlayerBet(op *Operate) {
+	//log.Debug(time.Now().Unix(), player, "OnPlayerBet")
+	if bet_data, ok := op.Data.(*OperateBetData); ok {
+		data := &BetMsgData{
+			BetPlayer:op.Operator,
+			BetScore:bet_data.Score,
+		}
+		player.notifyObserver(NewBetMsg(player, data))
+	}
 }
 
 func (player *Player) OnJiesuan(msg *Message) {

@@ -9,6 +9,7 @@ type MsgType	int
 const  (
 	MsgGetInitCards	MsgType = iota + 1
 	MsgGetMaster
+	MsgScramble
 	MsgBet
 	MsgDispatchCard
 	MsgShowCards
@@ -30,6 +31,8 @@ func (msgType MsgType) String() string {
 		return "MsgGetMaster"
 	case MsgDispatchCard:
 		return "MsgDispatchCard"
+	case MsgScramble:
+		return "MsgScramble"
 	case MsgBet:
 		return "MsgBet"
 	case MsgShowCards:
@@ -99,8 +102,20 @@ func NewDispatchCardMsg(owner *Player, data *DispatchCardMsgData) *Message {
 	return newMsg(MsgDispatchCard, owner, data)
 }
 
+//玩家抢庄的消息
+type ScrambleMsgData struct {
+	ScramblePlayer *Player
+	ScrambleMultiple int32
+}
+func NewScrambleMsg(owner *Player, data *ScrambleMsgData) *Message {
+	return newMsg(MsgScramble, owner, data)
+}
+
 //玩家下注的消息
-type BetMsgData struct {}
+type BetMsgData struct {
+	BetPlayer *Player
+	BetScore int32
+}
 func NewBetMsg(owner *Player, data *BetMsgData) *Message {
 	return newMsg(MsgBet, owner, data)
 }

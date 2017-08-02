@@ -59,9 +59,13 @@ func (ob *PlayerObserver) OnMsg(player *playing.Player, msg *playing.Message) {
 			log.Debug(log_time, player, "OnMsg MsgGetMaster, Scores:", master_data.Scores, "MasterPlayer:",
 				master_data.MasterPlayer, "HighestPlayers:", master_data.HighestPlayers)
 		}
+	case playing.MsgScramble:
+		if scramble_data, ok := msg.Data.(*playing.ScrambleMsgData); ok {
+			log.Debug(log_time, player, "OnMsg ScrambleMsgData", scramble_data.ScramblePlayer, scramble_data.ScrambleMultiple)
+		}
 	case playing.MsgBet:
-		if _, ok := msg.Data.(*playing.BetMsgData); ok {
-			log.Debug(log_time, player, "OnMsg MsgBet")
+		if bet_data, ok := msg.Data.(*playing.BetMsgData); ok {
+			log.Debug(log_time, player, "OnMsg MsgBet", bet_data.BetPlayer, bet_data.BetScore)
 		}
 	case playing.MsgDispatchCard:
 		if diapatched_data, ok := msg.Data.(*playing.DispatchCardMsgData); ok {
@@ -169,6 +173,9 @@ func main() {
 					curPlayer2.OperateLeaveRoom()
 				}
 			}
+		case playing.OperateScramble:
+			score, _ := strconv.Atoi(splits[1])
+			curPlayer.OperateScramble(int32(score))
 		case playing.OperateBet:
 			score, _ := strconv.Atoi(splits[1])
 			curPlayer.OperateBet(int32(score))

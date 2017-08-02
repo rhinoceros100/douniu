@@ -356,7 +356,7 @@ func (room *Room) waitAllPlayerReady() {
 			log.Debug(time.Now().Unix(), room, "RoomStatusStartPlayGame")
 			return
 		}
-		log.Debug(time.Now().Unix(), "cnt:", cnt)
+		//log.Debug(time.Now().Unix(), "cnt:", cnt)
 		time.Sleep(time.Millisecond * 500)
 		cnt++
 	}
@@ -391,6 +391,7 @@ func (room *Room) getMaster() {
 			go room.waitScramble(player)
 		}
 
+		log.Debug(time.Now().Unix(), room, "Wait scramble......")
 		cnt := 0
 		for !room.isAllPlayerScramble() {
 			time.Sleep(time.Millisecond * 100)
@@ -448,7 +449,7 @@ func (room *Room) getHighestScramblePlayers() ([]*Player) {
 }
 
 func (room *Room) playGame() {
-	log.Debug(time.Now().Unix(), room, "Room.playGame", room.playedGameCnt, "......")
+	log.Debug(time.Now().Unix(), room, "Room.playGame", room.playedGameCnt, "waitplayerbet......")
 
 	cnt := 0
 	for !room.isAllPlayerBet() {
@@ -458,9 +459,9 @@ func (room *Room) playGame() {
 	}
 
 	//通知所有玩家下注金额
-	for _, player := range room.players {
+	/*for _, player := range room.players {
 		player.OnAllBet()
-	}
+	}*/
 
 	time.Sleep(time.Second * room.config.AfterBetSleep)
 
