@@ -207,7 +207,7 @@ func (room *Room) waitAllPlayerEnter() {
 			if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom || op.Op == OperateReadyRoom {
 				log.Debug(time.Now().Unix(), room, "waitAllPlayerEnter catch operate:", op)
 				room.dealPlayerOperate(op)
-				if op.Op == OperateEnterRoom || op.Op == OperateLeaveRoom {
+				if op.Op == OperateEnterRoom {
 					go room.waitInitPlayerReady(op.Operator)
 				}
 
